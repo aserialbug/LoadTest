@@ -1,4 +1,5 @@
-﻿using Npgsql;
+﻿using Balance.Domain;
+using Npgsql;
 
 namespace Balance.Dao;
 
@@ -11,6 +12,7 @@ public class LoadTestPostgresContext : IAsyncDisposable
         var connectionString = configuration.GetConnectionString(nameof(LoadTestPostgresContext));
         var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
         dataSourceBuilder.UseLoggerFactory(loggerFactory);
+        dataSourceBuilder.MapEnum<OperationType>("op_type");
         DataSource = dataSourceBuilder.Build();
     }
     
