@@ -18,7 +18,7 @@ public class Operation
         if (SequenceNumber < 0)
             throw new ArgumentOutOfRangeException(nameof(sequenceNumber));
         
-        if(Created == DateTime.MinValue || Created == DateTime.MaxValue)
+        if(created == DateTime.MinValue || created == DateTime.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(created));
         
         Type = type;

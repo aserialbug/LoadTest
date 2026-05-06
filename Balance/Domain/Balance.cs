@@ -11,7 +11,7 @@ public class Balance
     public DateTime CreatedAt { get; }
     public DateTime UpdatedAt { get; private set; }
     public int Version { get; private set; }
-    public IEnumerable<Operation> Operations { get; }
+    public IEnumerable<Operation> Operations => _operations;
 
     public Balance(Guid id, IEnumerable<Operation> operations, DateTime createdAt, DateTime updatedAt)
     {

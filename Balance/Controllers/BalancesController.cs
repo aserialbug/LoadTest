@@ -23,7 +23,12 @@ public class BalancesController : ControllerBase
     public async Task<BalanceDto> Get([FromQuery]Guid balanceId)
     {
         var balance = await _balanceService.GetById(balanceId);
-        return new BalanceDto(balance.Id, balance.Amount);
+        var operations =
+            balance.Operations.Select(
+                o => new OperationDto(o.Id, o.Type, o.Amount, o.SequenceNumber, o.Created))
+                .ToList();
+        
+        return new BalanceDto(balance.Id, balance.Amount, operations);
     }
 
     [HttpPost]

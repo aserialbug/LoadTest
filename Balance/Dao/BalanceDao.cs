@@ -1,5 +1,6 @@
 ﻿using Balance.Domain;
 using Balance.Interfaces;
+using Npgsql;
 using NpgsqlTypes;
 
 namespace Balance.Dao;
@@ -15,9 +16,13 @@ public class BalanceDao : IBalanceDao
                                             o.amount as operation_amount,
                                             o.seq_n as operation_sequence_number,
                                             o.created as operation_id
-                                        from balances b left join operations o on b.id = o.balance_id where b.id = @id";
-    private const string AddBalanceSql = "insert into balances (id, balance, created, updated, version) values" +
-                                         " (@id, @balance, @created, @updated, @version)";
+                                        from balances b left join operations o on b.id = o.balance_id where b.id = @id;";
+
+    private const string AddOperationSql = "insert into operations (id, balance_id, type, amount, seq_n, created) " +
+                                           "values (@id, @balance_id, @type, @amount, @seq_n, @created)" +
+                                           "on conflict (id) do nothing;";
+    private const string AddBalanceSql = "insert into balances (id, balance, created, updated) values" +
+                                         " (@id, @balance, @created, @updated);";
     
     private readonly LoadTestPostgresContext _dbContext;
 
@@ -31,11 +36,6 @@ public class BalanceDao : IBalanceDao
         await using var command = _dbContext.DataSource.CreateCommand(GetByIdSql);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, id);
         await using var reader = await command.ExecuteReaderAsync();
-        
-        if (!await reader.ReadAsync())
-        {
-            throw new ArgumentException($"Balance {id} was not found");
-        }
 
         double? balanceAmount = null;
         DateTime balanceCreated = DateTime.MinValue;
@@ -47,7 +47,7 @@ public class BalanceDao : IBalanceDao
             balanceCreated = reader.GetDateTime(1);
             balanceUpdated = reader.GetDateTime(2);
             var operationId = reader.GetGuid(3);
-            var operationType = reader.GetFieldValue<OperationType>(4);
+            Enum.TryParse<OperationType>(reader.GetString(4), out var operationType);
             var operationAmount = reader.GetDouble(5);
             var operationSequenceNumber = reader.GetInt32(6);
             var operationCreated = reader.GetDateTime(7);
@@ -62,13 +62,45 @@ public class BalanceDao : IBalanceDao
 
     public async Task Add(Domain.Balance balance)
     {
-        await using var command = _dbContext.DataSource.CreateCommand(AddBalanceSql);
-        command.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, balance.Id);
-        command.Parameters.AddWithValue("balance", NpgsqlDbType.Double, balance.Amount);
-        command.Parameters.AddWithValue("created", NpgsqlDbType.Timestamp, balance.CreatedAt);
-        command.Parameters.AddWithValue("updated", NpgsqlDbType.Timestamp, balance.UpdatedAt);
-        command.Parameters.AddWithValue("version", NpgsqlDbType.Integer, balance.Version);
+        await using var connection = await _dbContext.DataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
 
-        await command.ExecuteNonQueryAsync();
+        try
+        {
+            await using var balanceCommand = new NpgsqlCommand(AddBalanceSql);
+            balanceCommand.Transaction = transaction;
+            balanceCommand.Connection = connection;
+            balanceCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, balance.Id);
+            balanceCommand.Parameters.AddWithValue("balance", NpgsqlDbType.Double, balance.Amount);
+            balanceCommand.Parameters.AddWithValue("created", NpgsqlDbType.Timestamp, balance.CreatedAt);
+            balanceCommand.Parameters.AddWithValue("updated", NpgsqlDbType.Timestamp, balance.UpdatedAt);
+            await balanceCommand.ExecuteNonQueryAsync();
+
+            await using var operationCommands =  new NpgsqlBatch();
+            operationCommands.Transaction = transaction;
+            operationCommands.Connection = connection;
+
+            foreach (var operation in balance.Operations)
+            {
+                var batchCommand = new NpgsqlBatchCommand(AddOperationSql);
+                batchCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, operation.Id);
+                batchCommand.Parameters.AddWithValue("balance_id", NpgsqlDbType.Uuid, balance.Id);
+                batchCommand.Parameters.Add(new NpgsqlParameter
+                    { ParameterName = "type", DataTypeName = "op_type", Value = operation.Type.ToString() });
+                batchCommand.Parameters.AddWithValue("amount", NpgsqlDbType.Double, operation.Amount);
+                batchCommand.Parameters.AddWithValue("seq_n", NpgsqlDbType.Integer, operation.SequenceNumber);
+                batchCommand.Parameters.AddWithValue("created", NpgsqlDbType.Timestamp, operation.Created);
+                operationCommands.BatchCommands.Add(batchCommand);
+            }
+
+
+            await operationCommands.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+        catch (Exception e)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 }
