@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Balance")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+666dace78c1db0757822692e276d399fdcd794d7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+776096e1521faee53fa1a7a00442ef33c23fe97b")]
 [assembly: System.Reflection.AssemblyProductAttribute("Balance")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Balance")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
