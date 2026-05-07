@@ -1,7 +1,10 @@
-﻿namespace Balance.Interfaces;
+﻿using Balance.Dto;
+
+namespace Balance.Interfaces;
 
 public interface IBalanceDao
 {
     public Task<Domain.Balance> GetById(Guid id);
-    public Task Add(Domain.Balance balance);
+    public Task<IEnumerable<BalanceListDto>> GetBalanceList();
+    public Task Upsert(Domain.Balance balance);
 }

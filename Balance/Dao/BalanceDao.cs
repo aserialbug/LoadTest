@@ -1,4 +1,5 @@
 ﻿using Balance.Domain;
+using Balance.Dto;
 using Balance.Interfaces;
 using Npgsql;
 using NpgsqlTypes;
@@ -18,11 +19,20 @@ public class BalanceDao : IBalanceDao
                                             o.created as operation_id
                                         from balances b left join operations o on b.id = o.balance_id where b.id = @id;";
 
-    private const string AddOperationSql = "insert into operations (id, balance_id, type, amount, seq_n, created) " +
-                                           "values (@id, @balance_id, @type, @amount, @seq_n, @created)" +
-                                           "on conflict (id) do nothing;";
-    private const string AddBalanceSql = "insert into balances (id, balance, created, updated) values" +
-                                         " (@id, @balance, @created, @updated);";
+    private const string AddOperationSql = @"insert into operations 
+                                                    (id, balance_id, type, amount, seq_n, created) 
+                                                values (@id, @balance_id, @type, @amount, @seq_n, @created) 
+                                                on conflict (id) do nothing;";
+
+    private const string AddBalanceSql = @"insert into balances 
+                                                (id, balance, created, updated) 
+                                            values (@id, @balance, @created, @updated)
+                                            on conflict (id) do update 
+                                                set balance = @balance, updated = @updated;";
+
+    private const string DeleteOperationByIdSql = @"delete from operations where id=@id;";
+    private const string GetBalanceListSql = @"select id, balance, created, updated from balances";
+    
     
     private readonly LoadTestPostgresContext _dbContext;
 
@@ -60,7 +70,24 @@ public class BalanceDao : IBalanceDao
         return new Domain.Balance(id, opList, balanceCreated, balanceUpdated);
     }
 
-    public async Task Add(Domain.Balance balance)
+    public async Task<IEnumerable<BalanceListDto>> GetBalanceList()
+    {
+        await using var command = _dbContext.DataSource.CreateCommand(GetBalanceListSql);
+        await using var reader = await command.ExecuteReaderAsync();
+        var balances = new List<BalanceListDto>();
+        while (await reader.ReadAsync())
+        {
+            balances.Add(new BalanceListDto(
+                reader.GetGuid(0),
+                reader.GetDouble(1),
+                reader.GetDateTime(2),
+                reader.GetDateTime(3)));
+        }
+
+        return balances;
+    }
+
+    public async Task Upsert(Domain.Balance balance)
     {
         await using var connection = await _dbContext.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
@@ -75,6 +102,23 @@ public class BalanceDao : IBalanceDao
             balanceCommand.Parameters.AddWithValue("created", NpgsqlDbType.Timestamp, balance.CreatedAt);
             balanceCommand.Parameters.AddWithValue("updated", NpgsqlDbType.Timestamp, balance.UpdatedAt);
             await balanceCommand.ExecuteNonQueryAsync();
+
+            if (balance.GetTrimmedOperations().Any())
+            {
+                await using var deleteOperationCommands =  new NpgsqlBatch();
+                deleteOperationCommands.Transaction = transaction;
+                deleteOperationCommands.Connection = connection;
+
+                foreach (var trimmedOperation in balance.GetTrimmedOperations())
+                {
+                    var batchCommand = new NpgsqlBatchCommand(DeleteOperationByIdSql);
+                    batchCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, trimmedOperation.Id);
+                    deleteOperationCommands.Connection = connection;
+                    deleteOperationCommands.BatchCommands.Add(batchCommand);
+                }
+            
+                await deleteOperationCommands.ExecuteNonQueryAsync();
+            }
 
             await using var operationCommands =  new NpgsqlBatch();
             operationCommands.Transaction = transaction;

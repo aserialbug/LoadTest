@@ -5,6 +5,7 @@ namespace Balance.Domain;
 public class Balance
 {
     private readonly List<Operation> _operations = new();
+    private List<Operation>? _trimmedOperations;
     public Guid Id { get; }
 
     public double Amount { get; private set; }
@@ -35,29 +36,57 @@ public class Balance
         if (_operations.Count == 0)
             throw new ArgumentOutOfRangeException(nameof(operations));
 
-        var comparer = Comparer<Operation>.Create((op1, op2) => op1.SequenceNumber.CompareTo(op2));
+        var comparer = Comparer<Operation>.Create((op1, op2) => op1.SequenceNumber.CompareTo(op2.SequenceNumber));
         _operations.Sort(comparer);
         
         if (_operations[0].Type != OperationType.Initial)
             throw new ArgumentOutOfRangeException(nameof(operations));
 
+        foreach (var operation in _operations)
+        {
+            UpdateAmount(operation);
+        }
+
         Version = _operations[^1].SequenceNumber;
     }
 
-    public void Deposit(double depositAmount) => CreateOperation(depositAmount, OperationType.Deposit);
+    public Operation Deposit(double depositAmount) => CreateOperation(depositAmount, OperationType.Deposit);
 
-    public void Expense(double expenseAmount) =>  CreateOperation(expenseAmount, OperationType.Expense);
+    public Operation Expense(double expenseAmount) =>  CreateOperation(expenseAmount, OperationType.Expense);
 
-    private void CreateOperation(double operationAmount, OperationType type)
+    public Operation TrimHistory()
+    {
+        if (_operations.Count == 1)
+            return _operations[0];
+        
+        var operation = Operation.New(OperationType.Initial, Amount, Version + 1);
+        _trimmedOperations ??= new List<Operation>();
+        _trimmedOperations.AddRange(_operations);
+        _operations.Clear();
+        _operations.Add(operation);
+        Version = operation.SequenceNumber;
+        return operation;
+    }
+
+    public IEnumerable<Operation> GetTrimmedOperations()
+    {
+        if (_trimmedOperations == null)
+            return Enumerable.Empty<Operation>();
+
+        return _trimmedOperations;
+    }
+
+    private Operation CreateOperation(double operationAmount, OperationType type)
     {
         if (operationAmount <= 0d)
             throw new ArgumentOutOfRangeException(nameof(operationAmount));
         
-        var operation = Operation.New(type, operationAmount, Version++);
+        var operation = Operation.New(type, operationAmount, Version + 1);
         UpdateAmount(operation);
         _operations.Add(operation);
         UpdatedAt = DateTime.Now;
         Version = operation.SequenceNumber;
+        return operation;
     }
 
     private void UpdateAmount(Operation operation)

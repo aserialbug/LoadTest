@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Balance.Dao;
 using Balance.Interfaces;
 using Balance.Services;
@@ -9,7 +10,11 @@ builder.Services.AddScoped<IBalanceService, DomainBalancesService>();
 builder.Services.AddScoped<IBalanceDao, BalanceDao>();
 builder.Services.AddSingleton<LoadTestPostgresContext>();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(opt =>
+    {
+        opt.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
