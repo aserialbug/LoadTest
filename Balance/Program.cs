@@ -6,8 +6,8 @@ using Balance.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddScoped<IBalanceService, DomainBalancesService>();
-builder.Services.AddScoped<IBalanceDao, BalanceDao>();
+builder.Services.AddSingleton<IBalanceService, DomainBalancesService>();
+builder.Services.AddSingleton<IBalanceDao, BalanceDao>();
 builder.Services.AddSingleton<LoadTestPostgresContext>();
 
 builder.Services.AddControllers()

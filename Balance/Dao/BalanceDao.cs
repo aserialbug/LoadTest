@@ -94,51 +94,42 @@ public class BalanceDao : IBalanceDao
 
         try
         {
-            await using var balanceCommand = new NpgsqlCommand(AddBalanceSql);
-            balanceCommand.Transaction = transaction;
-            balanceCommand.Connection = connection;
+            await using var batchCommand =  new NpgsqlBatch();
+            var balanceCommand = new NpgsqlBatchCommand(AddBalanceSql);
+            batchCommand.Transaction = transaction;
+            batchCommand.Connection = connection;
             balanceCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, balance.Id);
             balanceCommand.Parameters.AddWithValue("balance", NpgsqlDbType.Double, balance.Amount);
             balanceCommand.Parameters.AddWithValue("created", NpgsqlDbType.Timestamp, balance.CreatedAt);
             balanceCommand.Parameters.AddWithValue("updated", NpgsqlDbType.Timestamp, balance.UpdatedAt);
-            await balanceCommand.ExecuteNonQueryAsync();
+            batchCommand.BatchCommands.Add(balanceCommand);
 
             if (balance.GetTrimmedOperations().Any())
             {
-                await using var deleteOperationCommands =  new NpgsqlBatch();
-                deleteOperationCommands.Transaction = transaction;
-                deleteOperationCommands.Connection = connection;
-
                 foreach (var trimmedOperation in balance.GetTrimmedOperations())
                 {
-                    var batchCommand = new NpgsqlBatchCommand(DeleteOperationByIdSql);
-                    batchCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, trimmedOperation.Id);
-                    deleteOperationCommands.Connection = connection;
-                    deleteOperationCommands.BatchCommands.Add(batchCommand);
+                    var deleteOperationCommand = new NpgsqlBatchCommand(DeleteOperationByIdSql);
+                    deleteOperationCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, trimmedOperation.Id);
+                    batchCommand.Connection = connection;
+                    batchCommand.BatchCommands.Add(deleteOperationCommand);
                 }
-            
-                await deleteOperationCommands.ExecuteNonQueryAsync();
             }
-
-            await using var operationCommands =  new NpgsqlBatch();
-            operationCommands.Transaction = transaction;
-            operationCommands.Connection = connection;
-
+            
             foreach (var operation in balance.Operations)
             {
-                var batchCommand = new NpgsqlBatchCommand(AddOperationSql);
-                batchCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, operation.Id);
-                batchCommand.Parameters.AddWithValue("balance_id", NpgsqlDbType.Uuid, balance.Id);
-                batchCommand.Parameters.Add(new NpgsqlParameter
+                var addOperationCommand = new NpgsqlBatchCommand(AddOperationSql);
+                addOperationCommand.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, operation.Id);
+                addOperationCommand.Parameters.AddWithValue("balance_id", NpgsqlDbType.Uuid, balance.Id);
+                addOperationCommand.Parameters.Add(new NpgsqlParameter
                     { ParameterName = "type", DataTypeName = "op_type", Value = operation.Type.ToString() });
-                batchCommand.Parameters.AddWithValue("amount", NpgsqlDbType.Double, operation.Amount);
-                batchCommand.Parameters.AddWithValue("seq_n", NpgsqlDbType.Integer, operation.SequenceNumber);
-                batchCommand.Parameters.AddWithValue("created", NpgsqlDbType.Timestamp, operation.Created);
-                operationCommands.BatchCommands.Add(batchCommand);
+                addOperationCommand.Parameters.AddWithValue("amount", NpgsqlDbType.Double, operation.Amount);
+                addOperationCommand.Parameters.AddWithValue("seq_n", NpgsqlDbType.Integer, operation.SequenceNumber);
+                addOperationCommand.Parameters.AddWithValue("created", NpgsqlDbType.Timestamp, operation.Created);
+                batchCommand.BatchCommands.Add(addOperationCommand);
             }
 
 
-            await operationCommands.ExecuteNonQueryAsync();
+            await batchCommand.ExecuteNonQueryAsync();
             await transaction.CommitAsync();
         }
         catch (Exception e)
